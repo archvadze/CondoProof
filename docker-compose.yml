@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: condoproof-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: condoproof
+      POSTGRES_USER: condoproof
+      POSTGRES_PASSWORD: condoproof
+    ports:
+      - "54329:5432"
+    volumes:
+      - condoproof_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U condoproof -d condoproof"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  condoproof_postgres:

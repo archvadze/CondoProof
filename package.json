@@ -1,0 +1,17 @@
+{
+  "name": "condoproof",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "packages/shared"
+  ],
+  "scripts": {
+    "web:dev": "npm run dev --workspace apps/web",
+    "web:build": "npm run build --workspace apps/web",
+    "api:dev": "npm run start:dev --workspace apps/api",
+    "api:build": "npm run build --workspace apps/api",
+    "shared:build": "npm run build --workspace packages/shared"
+  }
+}
