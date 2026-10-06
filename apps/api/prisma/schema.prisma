@@ -1,0 +1,218 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProposalStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VoteChoice {
+  APPROVE
+  REJECT
+  ABSTAIN
+}
+
+enum CommitmentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+enum CommitmentKind {
+  PROPOSAL
+  PERIOD
+  PAYMENT_BATCH
+  SERVICE_COMPLETION
+}
+
+enum BillingPeriod {
+  MONTHLY
+  WEEKLY
+  YEARLY
+  ONE_OFF
+}
+
+model Building {
+  id                     String   @id @default(uuid()) @db.Uuid
+  name                   String
+  address                String?
+  timezone               String   @default("Asia/Tbilisi")
+  governanceThresholdBps Int      @default(8000)
+  quorumBps              Int      @default(5000)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  units       Unit[]
+  residents   Resident[]
+  services    Service[]
+  proposals   Proposal[]
+  commitments Commitment[]
+  invoices    Invoice[]
+}
+
+model Unit {
+  id              String   @id @default(uuid()) @db.Uuid
+  buildingId      String   @db.Uuid
+  label           String
+  votingWeightBps Int      @default(1000)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  building      Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unitResidents UnitResident[]
+  votes         ProposalVote[]
+
+  @@unique([buildingId, label])
+}
+
+model Resident {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  email         String?
+  walletAddress String?  @unique
+  buildingId    String   @db.Uuid
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  building  Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  units     UnitResident[]
+  votes     ProposalVote[]
+  proposals Proposal[]     @relation("ProposalCreatedBy")
+}
+
+model UnitResident {
+  id         String @id @default(uuid()) @db.Uuid
+  unitId     String @db.Uuid
+  residentId String @db.Uuid
+  role       String @default("OWNER")
+
+  unit     Unit           @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  resident Resident       @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  votes    ProposalVote[]
+
+  @@unique([unitId, residentId])
+}
+
+model Service {
+  id         String   @id @default(uuid()) @db.Uuid
+  buildingId String   @db.Uuid
+  name       String
+  category   String
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  building  Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  versions  ServiceVersion[]
+  proposals Proposal[]
+  invoices  Invoice[]
+
+  @@unique([buildingId, name])
+}
+
+model ServiceVersion {
+  id                 String        @id @default(uuid()) @db.Uuid
+  serviceId          String        @db.Uuid
+  version            Int
+  title              String
+  description        String?
+  monthlyAmountMinor Int
+  currency           String
+  billingPeriod      BillingPeriod @default(MONTHLY)
+  effectiveFrom      DateTime?
+  contentHash        String?       @unique
+  configJson         Json
+  active             Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+
+  service   Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  proposals Proposal[]
+  invoices  Invoice[]
+
+  @@unique([serviceId, version])
+}
+
+model Proposal {
+  id                  String         @id @default(uuid()) @db.Uuid
+  buildingId          String         @db.Uuid
+  serviceId           String         @db.Uuid
+  proposedVersionId   String         @db.Uuid
+  createdByResidentId String?        @db.Uuid
+  status              ProposalStatus @default(PENDING)
+  title               String
+  description         String?
+  requiredApprovals   Int            @default(4)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  building        Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  service         Service        @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  proposedVersion ServiceVersion @relation(fields: [proposedVersionId], references: [id])
+  createdBy       Resident?      @relation("ProposalCreatedBy", fields: [createdByResidentId], references: [id])
+  votes           ProposalVote[]
+  commitments     Commitment[]
+
+  @@index([buildingId, status])
+}
+
+model ProposalVote {
+  id              String     @id @default(uuid()) @db.Uuid
+  proposalId      String     @db.Uuid
+  unitId          String     @db.Uuid
+  unitResidentId  String     @db.Uuid
+  residentId      String     @db.Uuid
+  choice          VoteChoice
+  votingWeightBps Int
+  createdAt       DateTime   @default(now())
+
+  proposal     Proposal     @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  unit         Unit         @relation(fields: [unitId], references: [id])
+  unitResident UnitResident @relation(fields: [unitResidentId], references: [id])
+  resident     Resident     @relation(fields: [residentId], references: [id])
+
+  @@unique([proposalId, unitResidentId])
+}
+
+model Invoice {
+  id               String   @id @default(uuid()) @db.Uuid
+  buildingId       String   @db.Uuid
+  serviceId        String   @db.Uuid
+  serviceVersionId String   @db.Uuid
+  periodKey        String
+  amountMinor      Int
+  currency         String
+  status           String
+  createdAt        DateTime @default(now())
+
+  building       Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  service        Service        @relation(fields: [serviceId], references: [id])
+  serviceVersion ServiceVersion @relation(fields: [serviceVersionId], references: [id])
+
+  @@unique([buildingId, periodKey, serviceId])
+}
+
+model Commitment {
+  id              String           @id @default(uuid()) @db.Uuid
+  buildingId      String           @db.Uuid
+  proposalId      String?          @db.Uuid
+  kind            CommitmentKind
+  commitmentHash  String           @unique
+  status          CommitmentStatus @default(PENDING)
+  solanaSignature String?
+  solanaSlot      BigInt?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+
+  building Building  @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  proposal Proposal? @relation(fields: [proposalId], references: [id])
+
+  @@index([commitmentHash])
+}
