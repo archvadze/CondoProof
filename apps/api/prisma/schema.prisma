@@ -153,12 +153,14 @@ model Proposal {
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
-  building        Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  service         Service        @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  proposedVersion ServiceVersion @relation(fields: [proposedVersionId], references: [id])
-  createdBy       Resident?      @relation("ProposalCreatedBy", fields: [createdByResidentId], references: [id])
-  votes           ProposalVote[]
-  commitments     Commitment[]
+  building           Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  service            Service        @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  proposedVersion    ServiceVersion @relation(fields: [proposedVersionId], references: [id])
+  createdBy          Resident?      @relation("ProposalCreatedBy", fields: [createdByResidentId], references: [id])
+  votes              ProposalVote[]
+  commitments        Commitment[]
+  governanceSnapshot Json?
+  baseVersionId      String?        @db.Uuid
 
   @@index([buildingId, status])
 }
@@ -179,6 +181,7 @@ model ProposalVote {
   resident     Resident     @relation(fields: [residentId], references: [id])
 
   @@unique([proposalId, unitResidentId])
+  @@unique([proposalId, unitId])
 }
 
 model Invoice {
