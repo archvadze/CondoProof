@@ -2,6 +2,11 @@ import {
   BadRequestException, ConflictException, ForbiddenException,
   Injectable, InternalServerErrorException, NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import type { WalletIdentity } from "../wallet-auth/wallet-auth.service.js";
+import {
+  ballotInput, signedBallotMessage, signedProposalHash, verifySignedBallot, verifyStoredSignedBallot,
+} from "../signed-voting/signed-message.js";
 import { Prisma } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { CreateProposalDto } from "./dto/create-proposal.dto.js";
@@ -37,6 +42,8 @@ export class ProposalsService {
       buildingId: proposal.buildingId,
       serviceId: proposal.serviceId,
       baseVersionId: proposal.baseVersionId,
+      authorizationMode: proposal.authorizationMode,
+      signingHash: proposal.signingHash,
       status: proposal.status,
       title: proposal.title,
       description: proposal.description,
@@ -77,7 +84,7 @@ export class ProposalsService {
     return this.present(proposal);
   }
 
-  async create(buildingId: string, dto: CreateProposalDto) {
+  async create(buildingId: string, dto: CreateProposalDto, identity?: WalletIdentity) {
     // JSON size is bounded before entering the transaction.
     if (Buffer.byteLength(JSON.stringify(dto.proposedVersion.configJson), "utf8") > 32768) {
       throw new BadRequestException("configJson exceeds 32 KiB");
@@ -94,6 +101,7 @@ export class ProposalsService {
               unitResidents: {
                 where: { role: "OWNER", resident: { buildingId } },
                 orderBy: { id: "asc" },
+                include: { resident: { select: { walletAddress: true } } },
               },
             },
           },
@@ -110,6 +118,7 @@ export class ProposalsService {
           unitId: unit.id, votingWeightBps: unit.votingWeightBps,
           members: unit.unitResidents.map((membership) => ({
             membershipId: membership.id, residentId: membership.residentId,
+            ...(identity ? { walletAddress: membership.resident.walletAddress ?? undefined } : {}),
           })),
         })),
       };
@@ -121,6 +130,10 @@ export class ProposalsService {
       const creator = policy.eligibleUnits.flatMap((unit) => unit.members)
         .find((member) => member.membershipId === dto.createdByMembershipId);
       if (!creator) throw new ForbiddenException("Creator is not an eligible owner in this building");
+      if (identity && (identity.buildingId !== buildingId || identity.residentId !== creator.residentId ||
+          identity.walletAddress !== creator.walletAddress)) {
+        throw new ForbiddenException("Authenticated wallet cannot create as another owner");
+      }
 
       const service = await tx.service.findFirst({
         where: { id: dto.serviceId, buildingId, active: true },
@@ -137,6 +150,7 @@ export class ProposalsService {
         throw new ConflictException("Service already has a pending proposal");
       }
 
+      const proposalId = randomUUID();
       const version = await tx.serviceVersion.create({
         data: {
           serviceId: service.id,
@@ -150,9 +164,22 @@ export class ProposalsService {
           active: false,
         },
       });
+      let signingHash: string | null = null;
+      if (identity) {
+        try {
+          signingHash = signedProposalHash({
+            id: proposalId, buildingId, serviceId: service.id, baseVersionId: activeVersions[0]!.id,
+            title: dto.title, description: dto.description ?? null, createdByResidentId: creator.residentId,
+            governanceSnapshot: policy as unknown as Prisma.JsonObject, proposedVersion: version,
+          });
+        } catch (error) {
+          throw new ConflictException(error instanceof Error ? error.message : "Invalid signed proposal");
+        }
+      }
       const proposal = await tx.proposal.create({
         data: {
-          buildingId, serviceId: service.id, proposedVersionId: version.id,
+          id: proposalId, buildingId, serviceId: service.id, proposedVersionId: version.id,
+          authorizationMode: identity ? "WALLET_SIGNED" : "UNSIGNED_DEMO", signingHash,
           baseVersionId: activeVersions[0]!.id,
           createdByResidentId: creator.residentId,
           title: dto.title, description: dto.description, status: "PENDING",
@@ -166,7 +193,30 @@ export class ProposalsService {
     }, { isolationLevel: "ReadCommitted", maxWait: 10000, timeout: 15000 });
   }
 
-  async castVote(buildingId: string, proposalId: string, dto: CastVoteDto) {
+  private signedInput(proposal: ProposalRecord, dto: CastVoteDto, identity: WalletIdentity) {
+    let input: ReturnType<typeof ballotInput>;
+    try { input = ballotInput(proposal, dto.membershipId, dto.choice); }
+    catch (error) { throw new ConflictException(error instanceof Error ? error.message : "Invalid signed proposal"); }
+    if (identity.buildingId !== input.buildingId || identity.residentId !== input.residentId ||
+        identity.walletAddress !== input.walletAddress) {
+      throw new ForbiddenException("Authenticated wallet does not own this frozen membership");
+    }
+    return input;
+  }
+
+  async ballotMessage(buildingId: string, proposalId: string, dto: CastVoteDto, identity: WalletIdentity) {
+    const proposal = await this.prisma.proposal.findFirst({
+      where: { id: proposalId, buildingId }, include: proposalInclude,
+    });
+    if (!proposal) throw new NotFoundException("Proposal not found");
+    if (proposal.status !== "PENDING") throw new ConflictException("Proposal is closed");
+    const input = this.signedInput(proposal, dto, identity);
+    return { proposalHash: proposal.signingHash, message: signedBallotMessage(input),
+      walletAddress: input.walletAddress, unitId: input.unitId, choice: input.choice,
+      messageEncoding: "utf8", signatureEncoding: "base64" };
+  }
+
+  async castVote(buildingId: string, proposalId: string, dto: CastVoteDto, identity?: WalletIdentity, signatureBase64?: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.lockBuilding(tx, buildingId);
       const proposal = await tx.proposal.findFirst({
@@ -174,6 +224,15 @@ export class ProposalsService {
       });
       if (!proposal) throw new NotFoundException("Proposal not found in this building");
       if (proposal.status !== "PENDING") throw new ConflictException("Proposal is closed");
+      let signedMessage: string | undefined;
+      if (proposal.authorizationMode === "WALLET_SIGNED") {
+        if (!identity || !signatureBase64) throw new ForbiddenException("Signed proposal requires wallet authentication and a ballot signature");
+        const input = this.signedInput(proposal, dto, identity);
+        if (!verifySignedBallot(input, signatureBase64)) throw new ForbiddenException("Invalid ballot signature");
+        signedMessage = signedBallotMessage(input);
+      } else if (identity) {
+        throw new ConflictException("Unsigned proposal cannot accept a signed ballot");
+      }
       const policy = this.snapshot(proposal.governanceSnapshot);
       const eligibleUnit = policy.eligibleUnits.find((unit) =>
         unit.members.some((member) => member.membershipId === dto.membershipId));
@@ -185,7 +244,7 @@ export class ProposalsService {
         where: {
           id: dto.membershipId, unitId: eligibleUnit.unitId,
           residentId: eligibleMember.residentId, role: "OWNER",
-          unit: { buildingId }, resident: { buildingId },
+          unit: { buildingId }, resident: { buildingId, ...(identity ? { walletAddress: identity.walletAddress } : {}) },
         }, select: { id: true },
       });
       if (!membership) throw new ForbiddenException("Owner membership is no longer valid");
@@ -198,9 +257,14 @@ export class ProposalsService {
           proposalId, unitId: eligibleUnit.unitId, unitResidentId: membership.id,
           residentId: eligibleMember.residentId, choice: dto.choice,
           votingWeightBps: eligibleUnit.votingWeightBps,
+          walletAddress: identity?.walletAddress, signatureBase64, signedMessage,
         },
       });
       const ballots = await tx.proposalVote.findMany({ where: { proposalId } });
+      if (proposal.authorizationMode === "WALLET_SIGNED" &&
+          !ballots.every((vote) => verifyStoredSignedBallot(proposal, vote))) {
+        throw new ConflictException("Stored ballot signatures are inconsistent");
+      }
       const result = tally(policy, ballots);
       if (result.decision === "APPROVED") {
         const service = await tx.service.findFirst({

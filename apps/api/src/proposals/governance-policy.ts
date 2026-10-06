@@ -4,7 +4,7 @@ export type Decision = "PENDING" | "APPROVED" | "REJECTED";
 export interface EligibleUnit {
   unitId: string;
   votingWeightBps: number;
-  members: { membershipId: string; residentId: string }[];
+  members: { membershipId: string; residentId: string; walletAddress?: string }[];
 }
 
 export interface GovernanceSnapshot {

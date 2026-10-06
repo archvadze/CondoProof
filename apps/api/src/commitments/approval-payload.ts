@@ -15,6 +15,7 @@ export type ApprovalRecord = Prisma.ProposalGetPayload<{ include: typeof approva
 const compareIds = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 
 export function buildApprovalPayload(proposal: ApprovalRecord) {
+  if (proposal.authorizationMode !== "UNSIGNED_DEMO") throw new Error("Signed proposals require the separate signed approval proof version");
   if (proposal.status !== "APPROVED") throw new Error("Only approved proposals can be committed");
   if (!proposal.governanceSnapshot || !proposal.baseVersionId) throw new Error("Proposal has no frozen policy/base version");
   if (proposal.proposedVersion.serviceId !== proposal.serviceId) throw new Error("Version belongs to another service");

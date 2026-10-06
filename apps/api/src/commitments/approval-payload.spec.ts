@@ -4,6 +4,7 @@ import type { ApprovalRecord } from "./approval-payload.js";
 
 function fixture(): ApprovalRecord {
   return {
+    authorizationMode: "UNSIGNED_DEMO", signingHash: null,
     id: "proposal-1", buildingId: "building-1", serviceId: "service-1",
     proposedVersionId: "version-2", baseVersionId: "version-1",
     createdByResidentId: "r0", title: "Cleaning change", description: null,
@@ -26,6 +27,7 @@ function fixture(): ApprovalRecord {
     votes: Array.from({ length: 3 }, (_, i) => ({
       id: `vote${i}`, proposalId: "proposal-1", unitId: `u${i}`,
       unitResidentId: `m${i}`, residentId: `r${i}`, choice: "APPROVE",
+      walletAddress: null, signatureBase64: null, signedMessage: null,
       votingWeightBps: 2000, createdAt: new Date("2026-10-06T21:01:00.000Z"),
     })),
   };

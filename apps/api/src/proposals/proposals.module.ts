@@ -8,5 +8,6 @@ import { DemoGovernanceGuard } from "./demo-governance.guard.js";
   imports: [PrismaModule],
   controllers: [ProposalsController],
   providers: [ProposalsService, DemoGovernanceGuard],
+  exports: [ProposalsService],
 })
 export class ProposalsModule {}
