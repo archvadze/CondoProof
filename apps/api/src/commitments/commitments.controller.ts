@@ -1,6 +1,8 @@
 import {
-  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards, ValidationPipe,
+  Body, Controller, ForbiddenException, Req, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards, ValidationPipe,
 } from "@nestjs/common";
+import { WalletAuthGuard } from "../wallet-auth/wallet-auth.guard.js";
+import type { WalletRequest } from "../wallet-auth/wallet-auth.guard.js";
 import { DemoGovernanceGuard } from "../proposals/demo-governance.guard.js";
 import { VerifyPayloadDto } from "./dto/verify-payload.dto.js";
 import { CommitmentsService } from "./commitments.service.js";
@@ -17,6 +19,18 @@ export class CommitmentsController {
     @Param("proposalId", new ParseUUIDPipe()) proposalId: string,
   ) {
     return this.commitments.create(buildingId, proposalId);
+  }
+
+  @Post("signed-proposals/:proposalId/commitments")
+  @HttpCode(200)
+  @UseGuards(WalletAuthGuard)
+  createSigned(
+    @Param("buildingId", new ParseUUIDPipe()) buildingId: string,
+    @Param("proposalId", new ParseUUIDPipe()) proposalId: string,
+    @Req() request: WalletRequest,
+  ) {
+    if (request.walletIdentity.buildingId !== buildingId) throw new ForbiddenException("Wallet belongs to another building");
+    return this.commitments.create(buildingId, proposalId, "WALLET_SIGNED");
   }
 
   @Get("commitments/:commitmentId")

@@ -4,6 +4,7 @@ import {
 import { Prisma } from "../generated/prisma/client.js";
 import type { Commitment } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { buildSignedApprovalPayload, verifySignedApprovalPayload } from "./signed-approval-payload.js";
 import { approvalInclude, buildApprovalPayload } from "./approval-payload.js";
 import { CANONICALIZATION, canonicalHash, canonicalJson } from "./canonical-json.js";
 
@@ -14,11 +15,15 @@ export class CommitmentsService {
   private payload(record: Commitment): Record<string, unknown> {
     const metadata = record.metadata;
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) ||
-        metadata.canonicalization !== CANONICALIZATION || metadata.authorizationMode !== "UNSIGNED_DEMO" ||
+        metadata.canonicalization !== CANONICALIZATION || (metadata.authorizationMode !== "UNSIGNED_DEMO" && metadata.authorizationMode !== "WALLET_SIGNED") ||
         !metadata.payload || typeof metadata.payload !== "object" || Array.isArray(metadata.payload)) {
       throw new ConflictException("Commitment metadata is incompatible with this proof version");
     }
-    return metadata.payload as Record<string, unknown>;
+    const payload = metadata.payload as Record<string, unknown>;
+    const proposal = payload.proposal as Record<string, unknown> | undefined;
+    if (payload.authorizationMode !== metadata.authorizationMode || payload.buildingId !== record.buildingId ||
+        proposal?.id !== record.proposalId) throw new ConflictException("Commitment payload identity/mode mismatch");
+    return payload;
   }
 
   private present(record: Commitment) {
@@ -31,8 +36,9 @@ export class CommitmentsService {
       status: record.status,
       commitmentHash: record.commitmentHash,
       canonicalization: CANONICALIZATION,
-      authorizationMode: "UNSIGNED_DEMO",
-      authorizationVerified: false,
+      authorizationMode: payload.authorizationMode,
+      authorizationVerified: canonicalHash(payload) === record.commitmentHash && verifySignedApprovalPayload(payload),
+      enrollmentVerified: false,
       onChainVerified: false,
       solanaSignature: record.solanaSignature,
       solanaSlot: record.solanaSlot?.toString() ?? null,
@@ -51,7 +57,7 @@ export class CommitmentsService {
     return record;
   }
 
-  async create(buildingId: string, proposalId: string) {
+  async create(buildingId: string, proposalId: string, mode: "UNSIGNED_DEMO" | "WALLET_SIGNED" = "UNSIGNED_DEMO") {
     return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM "Building" WHERE id = ${buildingId}::uuid FOR UPDATE
@@ -62,7 +68,10 @@ export class CommitmentsService {
       });
       if (!proposal) throw new NotFoundException("Proposal not found in this building");
       let proof: ReturnType<typeof buildApprovalPayload>;
-      try { proof = buildApprovalPayload(proposal); }
+      try {
+        if (proposal.authorizationMode !== mode) throw new Error("Proposal authorization mode does not match this endpoint");
+        proof = mode === "WALLET_SIGNED" ? buildSignedApprovalPayload(proposal) : buildApprovalPayload(proposal);
+      }
       catch (error) {
         throw new ConflictException(error instanceof Error ? error.message : "Cannot build approval payload");
       }
@@ -95,7 +104,7 @@ export class CommitmentsService {
           metadata: {
             schemaVersion: 1,
             canonicalization: CANONICALIZATION,
-            authorizationMode: "UNSIGNED_DEMO",
+            authorizationMode: mode,
             payload: proof.payload as unknown as Prisma.InputJsonObject,
           },
         },
@@ -118,7 +127,7 @@ export class CommitmentsService {
     let versionHashMatches = false;
     if (proposal) {
       try {
-        const source = buildApprovalPayload(proposal);
+        const source = proposal.authorizationMode === "WALLET_SIGNED" ? buildSignedApprovalPayload(proposal) : buildApprovalPayload(proposal);
         sourceMatches = source.commitmentHash === record.commitmentHash;
         versionHashMatches = source.serviceVersionHash === proposal.proposedVersion.contentHash;
       } catch { /* Inconsistent source records fail verification. */ }
@@ -129,8 +138,9 @@ export class CommitmentsService {
       integrityVerified: stored.integrityVerified,
       sourceMatches,
       versionHashMatches,
-      authorizationMode: "UNSIGNED_DEMO",
-      authorizationVerified: false,
+      authorizationMode: stored.authorizationMode,
+      authorizationVerified: stored.authorizationVerified,
+      enrollmentVerified: false,
       onChainVerified: false,
       status: record.status,
     };
@@ -148,7 +158,8 @@ export class CommitmentsService {
       expectedHash: record.commitmentHash,
       computedHash,
       integrityVerified: computedHash === record.commitmentHash,
-      authorizationVerified: false,
+      authorizationVerified: computedHash === record.commitmentHash && verifySignedApprovalPayload(payload),
+      enrollmentVerified: false,
       onChainVerified: false,
     };
   }
