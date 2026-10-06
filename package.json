@@ -13,5 +13,10 @@
     "api:dev": "npm run start:dev --workspace apps/api",
     "api:build": "npm run build --workspace apps/api",
     "shared:build": "npm run build --workspace packages/shared"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.0": true,
+    "prisma@7.10.0": true,
+    "unrs-resolver": true
   }
 }

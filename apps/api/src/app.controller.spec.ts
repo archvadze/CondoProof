@@ -1,22 +1,17 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { AppController } from './app.controller.js';
-import { AppService } from './app.service.js';
+import { describe, expect, it, vi } from "vitest";
+import { AppController } from "./app.controller.js";
 
-describe('AppController', () => {
-  let appController: AppController;
+describe("AppController", () => {
+  it("returns healthy database status", async () => {
+    const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+    };
 
-  beforeEach(async () => {
-    const app: TestingModule = await Test.createTestingModule({
-      controllers: [AppController],
-      providers: [AppService],
-    }).compile();
+    const controller = new AppController(prisma as never);
 
-    appController = app.get<AppController>(AppController);
-  });
-
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    await expect(controller.health()).resolves.toEqual({
+      status: "ok",
+      database: "ok",
     });
   });
 });
