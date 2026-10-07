@@ -1,3 +1,4 @@
+import { verifyOnChain } from "../solana/devnet-rpc.js";
 import {
   BadRequestException, ConflictException, Injectable, NotFoundException,
 } from "@nestjs/common";
@@ -114,7 +115,10 @@ export class CommitmentsService {
   }
 
   async findOne(buildingId: string, commitmentId: string) {
-    return this.present(await this.requireCommitment(buildingId, commitmentId));
+    const record = await this.requireCommitment(buildingId, commitmentId);
+    const stored = this.present(record);
+    const chainVerification = await verifyOnChain(stored.payload, record.commitmentHash);
+    return { ...stored, onChainVerified: chainVerification.verified, chainVerification };
   }
 
   async verification(buildingId: string, commitmentId: string) {
@@ -132,6 +136,7 @@ export class CommitmentsService {
         versionHashMatches = source.serviceVersionHash === proposal.proposedVersion.contentHash;
       } catch { /* Inconsistent source records fail verification. */ }
     }
+    const chainVerification = await verifyOnChain(stored.payload, record.commitmentHash);
     return {
       commitmentId: record.id,
       commitmentHash: record.commitmentHash,
@@ -141,7 +146,8 @@ export class CommitmentsService {
       authorizationMode: stored.authorizationMode,
       authorizationVerified: stored.authorizationVerified,
       enrollmentVerified: false,
-      onChainVerified: false,
+      onChainVerified: chainVerification.verified,
+      chainVerification,
       status: record.status,
     };
   }
@@ -153,6 +159,7 @@ export class CommitmentsService {
     catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : "Invalid canonical payload");
     }
+    const chainVerification = await verifyOnChain(payload, record.commitmentHash);
     return {
       commitmentId: record.id,
       expectedHash: record.commitmentHash,
@@ -160,7 +167,8 @@ export class CommitmentsService {
       integrityVerified: computedHash === record.commitmentHash,
       authorizationVerified: computedHash === record.commitmentHash && verifySignedApprovalPayload(payload),
       enrollmentVerified: false,
-      onChainVerified: false,
+      onChainVerified: chainVerification.verified,
+      chainVerification,
     };
   }
 }
