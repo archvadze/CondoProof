@@ -1,0 +1,107 @@
+name: condoproof
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    env_file: ./db.env
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks:
+      - database
+    mem_limit: 128m
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - max_connections=25
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  api:
+    image: condoproof-api:${CONDOPROOF_IMAGE_TAG:?Set CONDOPROOF_IMAGE_TAG}
+    restart: unless-stopped
+    init: true
+    env_file: ./api.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+    expose:
+      - "3011"
+    networks:
+      - application
+      - database
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3011/health',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging: *logging
+
+  web:
+    image: condoproof-web:${CONDOPROOF_IMAGE_TAG:?Set CONDOPROOF_IMAGE_TAG}
+    restart: unless-stopped
+    init: true
+    env_file: ./web.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+    ports:
+      - "127.0.0.1:3010:3010"
+    networks:
+      - application
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3010/',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging: *logging
+
+  migrate:
+    image: condoproof-migrate:${CONDOPROOF_IMAGE_TAG:?Set CONDOPROOF_IMAGE_TAG}
+    profiles: [tools]
+    init: true
+    env_file: ./api.env
+    networks:
+      - database
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+
+networks:
+  application:
+  database:
+    internal: true
+
+volumes:
+  database:

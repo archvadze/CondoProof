@@ -1,0 +1,16 @@
+
+# CondoProof deployment exclusions
+.git
+**/node_modules
+**/.next
+**/dist
+**/src/generated
+.env*
+**/.env*
+**/*.env
+target
+**/*keypair*.json
+**/*.pem
+**/*.key
+**/*.dump
+**/*.log

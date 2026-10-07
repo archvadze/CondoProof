@@ -17,9 +17,11 @@ function json(data: unknown, status = 200, cookie?: string) {
 function origin(value: string, upstream: boolean) {
   const url = new URL(value);
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  const internalApi = upstream && url.protocol === "http:" &&
+    url.hostname === "api" && url.port === "3011";
   if (url.username || url.password || url.search || url.hash || url.pathname !== "/" ||
-      !(url.protocol === "https:" || (local && url.protocol === "http:"))) throw new Error("Invalid origin");
-  if (upstream && !local && url.protocol !== "https:") throw new Error("HTTPS required");
+      !(url.protocol === "https:" || ((local || internalApi) && url.protocol === "http:"))) throw new Error("Invalid origin");
+  if (upstream && !local && !internalApi && url.protocol !== "https:") throw new Error("HTTPS required");
   return url.origin;
 }
 export function cookieValue(token: string, maxAge: number, secure: boolean) {
