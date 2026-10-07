@@ -12,11 +12,22 @@
     "web:build": "npm run build --workspace apps/web",
     "api:dev": "npm run start:dev --workspace apps/api",
     "api:build": "npm run build --workspace apps/api",
-    "shared:build": "npm run build --workspace packages/shared"
+    "shared:build": "npm run build --workspace packages/shared",
+    "dev:api": "PORT=3011 DEMO_GOVERNANCE_ENABLED=true WALLET_AUTH_ORIGIN=http://localhost:3010 npm run start:dev --workspace apps/api",
+    "dev:web": "CONDOPROOF_API_ORIGIN=http://127.0.0.1:3011 CONDOPROOF_WEB_ORIGIN=http://localhost:3010 npm run dev --workspace apps/web -- --hostname 127.0.0.1 --port 3010",
+    "dev": "concurrently --kill-others --names API,WEB --prefix-colors cyan,green \"npm run dev:api\" \"npm run dev:web\""
   },
   "allowScripts": {
     "@prisma/engines@7.10.0": true,
     "prisma@7.10.0": true,
     "unrs-resolver": true
+  },
+  "devDependencies": {
+    "concurrently": "9.2.1"
+  },
+  "overrides": {
+    "concurrently": {
+      "shell-quote": "1.11.0"
+    }
   }
 }

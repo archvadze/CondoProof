@@ -15,7 +15,17 @@ try {
   assert.equal(independent.verified, true, independent.reason);
   assert.equal(record.status, "CONFIRMED");
   assert.equal(record.solanaSlot?.toString(), independent.recordedSlot);
-  const path = `http://127.0.0.1:3001/buildings/${record.buildingId}/commitments/${id}`;
+  const apiOrigin = new URL(
+    process.env.CONDOPROOF_API_ORIGIN ?? "http://127.0.0.1:3001",
+  );
+  assert.ok(
+    apiOrigin.protocol === "http:" &&
+    ["127.0.0.1", "localhost", "[::1]"].includes(apiOrigin.hostname) &&
+    !apiOrigin.username && !apiOrigin.password &&
+    apiOrigin.pathname === "/" && !apiOrigin.search && !apiOrigin.hash,
+    "A loopback HTTP API origin is required",
+  );
+  const path = `${apiOrigin.origin}/buildings/${record.buildingId}/commitments/${id}`;
   async function get(url: string, body?: unknown) {
     const response = await fetch(url, { method: body ? "POST" : "GET", headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(25000) });
