@@ -17,4 +17,4 @@ no-log-ix-name = []
 cpi = ["no-entrypoint"]
 
 [dependencies]
-anchor-lang = "1.1.2"
+anchor-lang = "=1.1.2"
