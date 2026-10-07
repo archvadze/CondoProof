@@ -1,7 +1,6 @@
 import {
   Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseUUIDPipe, Post, Req, UseGuards,
 } from "@nestjs/common";
-import { DemoGovernanceGuard } from "../proposals/demo-governance.guard.js";
 import { ProposalsService } from "../proposals/proposals.service.js";
 import { CreateProposalDto } from "../proposals/dto/create-proposal.dto.js";
 import { CastVoteDto } from "../proposals/dto/cast-vote.dto.js";
@@ -10,7 +9,7 @@ import type { WalletRequest } from "../wallet-auth/wallet-auth.guard.js";
 import { SignedVoteDto } from "./dto/signed-vote.dto.js";
 
 @Controller("buildings/:buildingId/signed-proposals")
-@UseGuards(DemoGovernanceGuard, WalletAuthGuard)
+@UseGuards(WalletAuthGuard)
 export class SignedVotingController {
   constructor(private readonly proposals: ProposalsService) {}
 

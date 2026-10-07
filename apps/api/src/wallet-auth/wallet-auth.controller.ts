@@ -1,5 +1,4 @@
 import { Body, Controller, Get, HttpCode, Post, Req, UseGuards } from "@nestjs/common";
-import { DemoGovernanceGuard } from "../proposals/demo-governance.guard.js";
 import { WalletChallengeDto } from "./dto/wallet-challenge.dto.js";
 import { WalletLoginDto } from "./dto/wallet-login.dto.js";
 import { WalletAuthGuard } from "./wallet-auth.guard.js";
@@ -7,7 +6,6 @@ import type { WalletRequest } from "./wallet-auth.guard.js";
 import { WalletAuthService } from "./wallet-auth.service.js";
 
 @Controller("auth")
-@UseGuards(DemoGovernanceGuard)
 export class WalletAuthController {
   constructor(private readonly auth: WalletAuthService) {}
 

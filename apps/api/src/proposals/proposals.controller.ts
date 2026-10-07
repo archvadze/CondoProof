@@ -7,7 +7,6 @@ import { DemoGovernanceGuard } from "./demo-governance.guard.js";
 import { ProposalsService } from "./proposals.service.js";
 
 @Controller("buildings/:buildingId/proposals")
-@UseGuards(DemoGovernanceGuard)
 export class ProposalsController {
   constructor(private readonly proposals: ProposalsService) {}
 
@@ -25,6 +24,7 @@ export class ProposalsController {
   }
 
   @Post()
+  @UseGuards(DemoGovernanceGuard)
   create(
     @Param("buildingId", new ParseUUIDPipe()) buildingId: string,
     @Body(new ValidationPipe({ whitelist: true, transform: true })) dto: CreateProposalDto,
@@ -33,6 +33,7 @@ export class ProposalsController {
   }
 
   @Post(":proposalId/votes")
+  @UseGuards(DemoGovernanceGuard)
   castVote(
     @Param("buildingId", new ParseUUIDPipe()) buildingId: string,
     @Param("proposalId", new ParseUUIDPipe()) proposalId: string,

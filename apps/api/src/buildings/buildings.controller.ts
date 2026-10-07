@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post } from "@nestjs/common";
+import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { DemoGovernanceGuard } from "../proposals/demo-governance.guard.js";
 import { BuildingsService } from "./buildings.service.js";
 import { CreateBuildingDto } from "./dto/create-building.dto.js";
 
@@ -12,6 +13,7 @@ export class BuildingsController {
   }
 
   @Post()
+  @UseGuards(DemoGovernanceGuard)
   create(@Body() dto: CreateBuildingDto) {
     return this.buildingsService.create(dto);
   }

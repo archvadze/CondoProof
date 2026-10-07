@@ -8,11 +8,11 @@ import { VerifyPayloadDto } from "./dto/verify-payload.dto.js";
 import { CommitmentsService } from "./commitments.service.js";
 
 @Controller("buildings/:buildingId")
-@UseGuards(DemoGovernanceGuard)
 export class CommitmentsController {
   constructor(private readonly commitments: CommitmentsService) {}
 
   @Post("proposals/:proposalId/commitments")
+  @UseGuards(DemoGovernanceGuard)
   @HttpCode(200)
   create(
     @Param("buildingId", new ParseUUIDPipe()) buildingId: string,
